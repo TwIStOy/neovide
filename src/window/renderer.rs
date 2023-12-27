@@ -1,12 +1,13 @@
 use std::num::NonZeroU32;
 use std::{convert::TryInto, ffi::CString};
 
-use crate::redraw_scheduler::REDRAW_SCHEDULER;
 use crate::renderer::WindowedContext;
 use gl::types::*;
 use glutin::prelude::GlConfig;
+use skia_safe::gpu::backend_render_targets::make_gl;
+use skia_safe::gpu::surfaces::wrap_backend_render_target;
 use skia_safe::{
-    gpu::{gl::FramebufferInfo, BackendRenderTarget, DirectContext, SurfaceOrigin},
+    gpu::{gl::FramebufferInfo, DirectContext, SurfaceOrigin},
     Canvas, ColorType, Surface,
 };
 
@@ -17,20 +18,17 @@ fn create_surface(
 ) -> Surface {
     let pixel_format = windowed_context.get_config();
     let size = windowed_context.get_render_target_size();
-    let backend_render_target = BackendRenderTarget::new_gl(
+    let backend_render_target = make_gl(
         size.into(),
-        Some(pixel_format.num_samples() as usize),
-        pixel_format
-            .stencil_size()
-            .try_into()
-            .expect("Could not convert stencil"),
+        Some(pixel_format.num_samples().into()),
+        pixel_format.stencil_size().into(),
         fb_info,
     );
     windowed_context.resize(
         NonZeroU32::new(size.width).unwrap(),
         NonZeroU32::new(size.height).unwrap(),
     );
-    Surface::from_backend_render_target(
+    wrap_backend_render_target(
         gr_context,
         &backend_render_target,
         SurfaceOrigin::BottomLeft,
@@ -68,6 +66,7 @@ impl SkiaRenderer {
             FramebufferInfo {
                 fboid: fboid.try_into().expect("Could not create frame buffer id"),
                 format: skia_safe::gpu::gl::Format::RGBA8.into(),
+                ..Default::default()
             }
         };
         let surface = create_surface(windowed_context, &mut gr_context, fb_info);
@@ -79,12 +78,11 @@ impl SkiaRenderer {
         }
     }
 
-    pub fn canvas(&mut self) -> &mut Canvas {
+    pub fn canvas(&mut self) -> &Canvas {
         self.surface.canvas()
     }
 
     pub fn resize(&mut self, windowed_context: &WindowedContext) {
         self.surface = create_surface(windowed_context, &mut self.gr_context, self.fb_info);
-        REDRAW_SCHEDULER.queue_next_frame();
     }
 }

@@ -1,15 +1,19 @@
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use std::{
-    env, eprintln,
+    env,
     process::{Command as StdCommand, Stdio},
 };
 
+use anyhow::{bail, Result};
 use log::debug;
 use tokio::process::Command as TokioCommand;
 
 use crate::{cmd_line::CmdLineSettings, settings::*};
 
-pub fn create_nvim_command() -> TokioCommand {
-    let mut cmd = build_nvim_cmd();
+pub fn create_nvim_command() -> Result<TokioCommand> {
+    let mut cmd = build_nvim_cmd()?;
 
     debug!("Starting neovim with: {:?}", cmd);
 
@@ -20,52 +24,35 @@ pub fn create_nvim_command() -> TokioCommand {
     cmd.stderr(Stdio::inherit());
 
     #[cfg(windows)]
-    set_windows_creation_flags(&mut cmd);
+    cmd.creation_flags(winapi::um::winbase::CREATE_NO_WINDOW);
 
-    cmd
+    Ok(cmd)
 }
 
-#[cfg(target_os = "windows")]
-fn set_windows_creation_flags(cmd: &mut TokioCommand) {
-    cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-}
-
-fn build_nvim_cmd() -> TokioCommand {
-    if let Some(path) = SETTINGS.get::<CmdLineSettings>().neovim_bin {
-        // if neovim_bin contains a path separator, then try to launch it directly
-        // otherwise use which to find the fully path
-        if path.contains('/') || path.contains('\\') {
-            if neovim_ok(&path) {
-                return build_nvim_cmd_with_args(&path);
-            }
-        } else if let Some(path) = platform_which(&path) {
-            if neovim_ok(&path) {
-                return build_nvim_cmd_with_args(&path);
-            }
+fn build_nvim_cmd() -> Result<TokioCommand> {
+    if let Some(cmdline) = SETTINGS.get::<CmdLineSettings>().neovim_bin {
+        if let Some((bin, args)) = lex_nvim_cmdline(&cmdline)? {
+            return Ok(build_nvim_cmd_with_args(bin, args));
         }
 
-        eprintln!("ERROR: NEOVIM_BIN='{}' was not found.", path);
-        std::process::exit(1);
+        bail!("ERROR: NEOVIM_BIN='{}' was not found.", cmdline);
     } else if let Some(path) = platform_which("nvim") {
-        if neovim_ok(&path) {
-            return build_nvim_cmd_with_args(&path);
+        if neovim_ok(&path, &[])? {
+            return Ok(build_nvim_cmd_with_args(path, vec![]));
         }
     }
-    eprintln!("ERROR: nvim not found!");
-    std::process::exit(1);
+    bail!("ERROR: nvim not found!")
 }
 
-// Creates a shell command if needed on this platform (wsl or macos)
+// Creates a shell command if needed on this platform (wsl or macOS)
 fn create_platform_shell_command(command: &str, args: &[&str]) -> StdCommand {
     if cfg!(target_os = "windows") && SETTINGS.get::<CmdLineSettings>().wsl {
         let mut result = StdCommand::new("wsl");
         result.args(["$SHELL", "-lc"]);
         result.arg(format!("{} {}", command, args.join(" ")));
+
         #[cfg(windows)]
-        std::os::windows::process::CommandExt::creation_flags(
-            &mut result,
-            winapi::um::winbase::CREATE_NO_WINDOW,
-        );
+        result.creation_flags(winapi::um::winbase::CREATE_NO_WINDOW);
 
         result
     } else if cfg!(target_os = "macos") {
@@ -80,17 +67,23 @@ fn create_platform_shell_command(command: &str, args: &[&str]) -> StdCommand {
 
         result
     } else {
-        // On Linux, just run the command directly
+        // On Linux and non-WSL Windows, just run the command directly
         let mut result = StdCommand::new(command);
         result.args(args);
+
+        #[cfg(windows)]
+        result.creation_flags(winapi::um::winbase::CREATE_NO_WINDOW);
+
         result
     }
 }
 
-fn neovim_ok(bin: &str) -> bool {
+fn neovim_ok(bin: &str, args: &[String]) -> Result<bool> {
     let is_wsl = SETTINGS.get::<CmdLineSettings>().wsl;
+    let mut args = args.iter().map(String::as_str).collect::<Vec<_>>();
+    args.push("-v");
 
-    let mut cmd = create_platform_shell_command(bin, &["-v"]);
+    let mut cmd = create_platform_shell_command(bin, &args);
     if let Ok(output) = cmd.output() {
         if output.status.success() {
             // The output is not utf8 on Windows and can contain special characters.
@@ -101,23 +94,44 @@ fn neovim_ok(bin: &str) -> bool {
                     concat!(
                         "ERROR: Unexpected output from neovim binary:\n",
                         "\t{bin} -v\n",
+                        "stdout: {stdout}\n",
+                        "stderr: {stderr}\n",
                         "Check that your shell doesn't output anything extra when running:",
                         "\n\t"
                     ),
-                    bin = bin
+                    bin = bin,
+                    stdout = stdout,
+                    stderr = String::from_utf8_lossy(&output.stderr),
                 );
 
                 if is_wsl {
-                    eprintln!("{error_message_prefix}wsl '$SHELL' -lc '{bin} -v'");
+                    bail!("{error_message_prefix}wsl '$SHELL' -lc '{bin} -v'");
                 } else {
-                    eprintln!("{error_message_prefix}$SHELL -lc '{bin} -v'");
+                    bail!("{error_message_prefix}$SHELL -lc '{bin} -v'");
                 }
-                std::process::exit(1);
             }
-            return true;
+            return Ok(true);
         }
     }
-    false
+    Ok(false)
+}
+
+fn lex_nvim_cmdline(cmdline: &str) -> Result<Option<(String, Vec<String>)>> {
+    shlex::split(cmdline)
+        .filter(|t| !t.is_empty())
+        .map(|mut tokens| (tokens.remove(0), tokens))
+        .and_then(|(bin, args)| {
+            // if neovim_bin contains a path separator, then try to launch it directly
+            // otherwise use which to find the full path
+            if !bin.contains('/') && !bin.contains('\\') {
+                platform_which(&bin).map(|bin| (bin, args))
+            } else {
+                Some((bin, args))
+            }
+        })
+        .map_or(Ok(None), |(bin, args)| {
+            neovim_ok(&bin, &args).map(|res| res.then_some((bin, args)))
+        })
 }
 
 fn platform_which(bin: &str) -> Option<String> {
@@ -147,27 +161,25 @@ fn platform_which(bin: &str) -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn nvim_cmd_impl(bin: &str, args: &[String]) -> TokioCommand {
+fn nvim_cmd_impl(bin: String, mut args: Vec<String>) -> TokioCommand {
     let shell = env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    args.insert(0, bin);
+    let args = shlex::join(args.iter().map(String::as_str));
     let mut cmd = TokioCommand::new(shell);
-    let args_str = args
-        .iter()
-        .map(|arg| shlex::quote(arg))
-        .collect::<Vec<_>>()
-        .join(" ");
     if env::var_os("TERM").is_none() {
         cmd.arg("-l");
     }
     cmd.arg("-c");
-    cmd.arg(&format!("{} {}", bin, args_str));
+    cmd.arg(&args);
     cmd
 }
 
 #[cfg(not(target_os = "macos"))]
-fn nvim_cmd_impl(bin: &str, args: &[String]) -> TokioCommand {
+fn nvim_cmd_impl(bin: String, mut args: Vec<String>) -> TokioCommand {
     if cfg!(target_os = "windows") && SETTINGS.get::<CmdLineSettings>().wsl {
+        args.insert(0, bin);
         let mut cmd = TokioCommand::new("wsl");
-        cmd.args(["$SHELL", "-lc", &format!("{} {}", bin, args.join(" "))]);
+        cmd.args(["$SHELL", "-lc", &args.join(" ")]);
         cmd
     } else {
         let mut cmd = TokioCommand::new(bin);
@@ -176,8 +188,8 @@ fn nvim_cmd_impl(bin: &str, args: &[String]) -> TokioCommand {
     }
 }
 
-fn build_nvim_cmd_with_args(bin: &str) -> TokioCommand {
-    let mut args = vec!["--embed".to_string()];
+fn build_nvim_cmd_with_args(bin: String, mut args: Vec<String>) -> TokioCommand {
+    args.push("--embed".to_string());
     args.extend(SETTINGS.get::<CmdLineSettings>().neovim_args);
-    nvim_cmd_impl(bin, &args)
+    nvim_cmd_impl(bin, args)
 }

@@ -59,7 +59,7 @@ as such it's also documented in `:h guifont`. But to sum it up and also add Neov
   - are separated from the fonts and themselves through `:` (colons).
   - can be one of the following:
     - `hX` — Sets the font size to `X` points, while `X` can be any (even floating-point) number.
-    - `wX` (**Unreleased yet**) — Sets the width **relative offset** to be `X` points, while `X`
+    - `wX` (available since 0.11.2) — Sets the width **relative offset** to be `X` points, while `X`
         can be again any number. Negative values shift characters closer together, positive values
         shift them further apart.
     - `b` — Sets the font **bold**.
@@ -201,6 +201,35 @@ vim.g.neovide_floating_blur_amount_y = 2.0
 Setting `g:neovide_floating_blur_amount_x` and `g:neovide_floating_blur_amount_y` controls the blur
 radius on the respective axis for floating windows.
 
+#### Floating Shadow
+
+VimScript:
+
+```vim
+let g:neovide_floating_shadow = v:true
+let g:neovide_floating_z_height = 10
+let g:neovide_light_angle_degrees = 45
+let g:neovide_light_radius = 5
+```
+
+Lua:
+
+```lua
+vim.g.neovide_floating_shadow = true
+vim.g.neovide_floating_z_height = 10
+vim.g.neovide_light_angle_degrees = 45
+vim.g.neovide_light_radius = 5
+```
+
+**Available since 0.12.0.**
+
+Setting `g:neovide_floating_shadow` to false will disable the shadow borders for floating windows.
+The other variables configure the shadow in various ways:
+
+- `g:neovide_floating_z_height` sets the virtual height of the floating window from the ground plane
+- `g:neovide_light_angle_degrees` sets the angle from the screen normal of the casting light
+- `g:neovide_light_radius` sets the radius of the casting light
+
 #### Transparency
 
 VimScript:
@@ -234,7 +263,29 @@ Lua:
 vim.g.neovide_scroll_animation_length = 0.3
 ```
 
-Sets how long the scroll animation takes to complete, measured in seconds.
+Sets how long the scroll animation takes to complete, measured in seconds. Note that the timing is
+not completely accurate and might depend slightly on have far you scroll, so experimenting is
+encouraged in order to tune it to your liking.
+
+#### Far scroll lines
+
+**Available since 0.12.0.**
+
+VimScript:
+
+```vim
+let g:neovide_scroll_animation_far_lines = 1
+```
+
+Lua:
+
+```lua
+vim.g.neovide_scroll_animation_far_lines = 1
+```
+
+When scrolling more than one screen at a time, only this many lines at the end of the scroll action
+will be animated. Set it to 0 to snap to the final position without any animation, or to something
+big like 9999 to always scroll the whole screen, much like Neovide <= 0.10.4 did.
 
 #### Hiding the mouse when typing
 
@@ -259,23 +310,23 @@ mouse makes it visible again.
 VimScript:
 
 ```vim
-let g:neovide_underline_automatic_scaling = v:false
+let g:neovide_underline_stroke_scale = 1.0
 ```
 
 Lua:
 
 ```lua
-vim.g.neovide_underline_automatic_scaling = false
+vim.g.neovide_underline_stroke_scale = 1.0
 ```
 
-**Available since 0.10.**
+**Available since 0.12.0.**
 
-Setting `g:neovide_underline_automatic_scaling` to a boolean value determines whether automatic
-scaling of text underlines (including undercurl, underdash, etc.) is enabled. Noticeable for font
-sizes above 15.
+Setting `g:neovide_underline_stroke_scale` to a floating point will increase or decrease the stroke
+width of the underlines (including undercurl, underdash, etc.). If the scaled stroke width is less
+than 1, it is clamped to 1 to prevent strange aliasing.
 
-**Note**: This is currently glitchy, and leads to some underlines being clipped by the line of text
-below.
+**Note**: This is currently glitchy if the scale is too large, and leads to some underlines being
+clipped by the line of text below.
 
 #### Theme
 
@@ -297,6 +348,29 @@ Set the [`background`](https://neovim.io/doc/user/options.html#'background') opt
 starts. Possible values: _light_, _dark_, _auto_. On systems that support it, _auto_ will mirror the
 system theme, and will update `background` when the system theme changes.
 
+#### Fix border and winbar scrolling glitches
+
+VimScript:
+
+```vim
+let g:neovide_unlink_border_highlights = v:true
+```
+
+Lua:
+
+```lua
+vim.g.neovide_unlink_border_highlights = true
+```
+
+**Available since 0.12.0.**
+
+Neovide uses some highlight groups for detecting the border of the windows, when scrolling. This
+detection is not perfect due to some limitations of Neovim, it only returns the final highlight
+groups for linked highlights. This option unlinks those highlight groups after the color scheme is
+loaded to make Neovide detect them properly.
+
+If this causes other problems, you can set this option to false.
+
 ### Functionality
 
 #### Refresh Rate
@@ -316,8 +390,8 @@ vim.g.neovide_refresh_rate = 60
 Setting `g:neovide_refresh_rate` to a positive integer will set the refresh rate of the app. This is
 limited by the refresh rate of your physical hardware, but can be lowered to increase battery life.
 
-Also do note that Neovide's frame pacing is far from optimal at the moment, so better hardware might
-not mean better FPS.
+This setting is only effective when not using vsync, for example by passing `--no-vsync` on the
+commandline.
 
 #### Idle Refresh Rate
 

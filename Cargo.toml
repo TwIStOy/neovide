@@ -1,11 +1,15 @@
 [package]
 name = "neovide"
-version = "0.11.1"
+version = "0.12.0"
 edition = "2021"
 build = "build.rs"
-description = "Neovide: No Nonsense Neovim Gui"
-repository = "https://github.com/neovide/neovide"
 resolver = "2"
+license = "MIT"
+description = "Neovide: No Nonsense Neovim Gui"
+homepage = "https://neovide.dev/"
+repository = "https://github.com/neovide/neovide"
+readme = "README.md"
+keywords = ["neovim", "nvim", "gui"]
 
 [workspace]
 members = ["neovide-derive"]
@@ -15,78 +19,79 @@ default = []
 embed-fonts = []
 profiling = ["dep:tracy-client-sys"]
 gpu_profiling = ["profiling"]
+# Corresponds to https://github.com/nagisa/rust_tracy_client/blob/main/FEATURES.mkd
+tracy-system-tracing = ["tracy-client-sys?/system-tracing"]
+tracy-context-switch-tracing = ["tracy-client-sys?/context-switch-tracing"]
+tracy-sampling = ["tracy-client-sys?/sampling"]
+tracy-code-transfer = ["tracy-client-sys?/code-transfer"]
+tracy-callstack-inlines = ["tracy-client-sys?/callstack-inlines"]
 
 [dependencies]
+anyhow = { version = "1.0.75", features = ["backtrace"] }
 async-trait = "0.1.53"
 backtrace = "0.3.67"
-cfg-if = "1.0.0"
 clap = { version = "4.3.19", features = ["cargo", "derive", "env"] }
 copypasta = "0.8.1"
 csscolorparser = "0.6.2"
 derive-new = "0.5.9"
 dirs = "5.0.0"
-euclid = "0.22.7"
 flexi_logger = { version = "0.22.3", default-features = false }
 futures = "0.3.21"
 gl = "0.14.0"
-glutin = "0.30.7"
-glutin-winit = "0.4.0-beta.0"
+glutin = "0.31.1"
+glutin-winit = "0.4.2"
 image = { version = "0.24.1", default-features = false, features = ["ico"] }
 itertools = "0.10.5"
 lazy_static = "1.4.0"
 log = "0.4.16"
 lru = "0.7.5"
-neovide-derive = { path = "neovide-derive" }
-nvim-rs = { version = "0.5.0", features = ["use_tokio"] }
+neovide-derive = { path = "neovide-derive", version = "0.1.0" }
+num = "0.4.1"
+nvim-rs = { version = "0.6.0", features = ["use_tokio"] }
 parking_lot = "0.12.0"
-pin-project = "1.0.10"
 rand = "0.8.5"
 raw-window-handle = "0.5.0"
 rmpv = "1.0.0"
 serde = { version = "1.0.136", features = ["derive"] }
 serde_json = "1.0.79"
+shlex = "1.1.0"
+simple_moving_average = "0.1.2"
+skia-safe = { version = "0.68.0", features = ["gl", "textlayout"] }
+spin_sleep = "1.1.1"
+strum = { version = "0.25.0", features = ["derive"] }
 swash = "0.1.8"
 time = "0.3.9"
 tokio = { version = "1.25.0", features = ["full"] }
 tokio-util = { version = "0.7.4", features = ["compat"] }
 toml = "0.7.3"
-tracy-client-sys = { version = "0.19.0", optional = true }
+tracy-client-sys = { version = "0.22.0", optional = true, default-features = false, features = ["broadcast", "delayed-init", "enable", "manual-lifetime", "fibers"] }
 unicode-segmentation = "1.9.0"
 which = "4.2.5"
-winit = { version = "=0.29.0-beta.0", features = ["serde"] }
+winit = { version = "=0.29.4", features = ["serde"] }
 xdg = "2.4.1"
 
 [dev-dependencies]
+approx = "0.5.1"
 mockall = "0.11.0"
 scoped-env = "2.1.0"
 serial_test = "2.0.0"
 
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(target_os = "windows")'.dependencies]
 # NOTE: winerror is only needed because the indirect dependency parity-tokio-ipc does not set it even if it uses it
-winapi = { version = "0.3.9", features = ["winuser", "wincon", "winerror"] }
+winapi = { version = "0.3.9", features = ["winuser", "wincon", "winerror", "dwmapi", "profileapi"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.24.0"
 objc = "0.2.7"
-shlex = "1.1.0"
 
-[target.'cfg(not(windows))'.dependencies]
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.26.2", features = ["poll"] }
+wayland-client = "0.30.2"
+wayland-sys = "0.30.1"
+wayland-backend = "0.1.2"
 
-[target.'cfg(windows)'.build-dependencies]
+[target.'cfg(target_os = "windows")'.build-dependencies]
 winres = "0.1.12"
-
-[target.'cfg(windows)'.dependencies.skia-safe]
-# NOTE: Including textlayout for pre-built binaries
-features = ["gl", "textlayout"]
-version = "0.62.0"
-
-[target.'cfg(linux)'.dependencies.skia-safe]
-features = ["egl", "gl", "textlayout", "wayland", "x11"]
-version = "0.62.0"
-
-[target.'cfg(not(linux))'.dependencies.skia-safe]
-features = ["gl"]
-version = "0.62.0"
 
 [profile.release]
 lto = true
@@ -102,7 +107,7 @@ debug = true
 name = "Neovide"
 identifier = "com.neovide.neovide"
 icon = ["assets/neovide.ico"]
-version = "0.11.1"
+version = "0.12.0"
 resources = []
 copyright = "Copyright (c) Neovide Contributors 2023. All rights reserved."
 category = "Productivity"
@@ -111,3 +116,4 @@ long_description = """
 This is a simple graphical user interface for Neovim. Where possible there are some graphical improvements, but it should act functionally like the terminal UI.
 """
 osx_minimum_system_version = "10.11"
+

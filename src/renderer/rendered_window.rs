@@ -330,6 +330,13 @@ impl RenderedWindow {
                 canvas.draw_picture(foreground_picture, Some(matrix), None);
             }
         }
+        {
+            let mut border_paint = Paint::default();
+            border_paint.set_stroke(true);
+            border_paint.set_color(Color::BLACK);
+            border_paint.set_stroke_width(5.0);
+            canvas.draw_rect(pixel_region, &border_paint);
+        }
         canvas.restore();
         self.has_transparency = has_transparency;
     }
